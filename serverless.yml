@@ -1,0 +1,52 @@
+service: job-tracker-api
+
+# Automatically loads .env.prod (for prod stage) or .env (for dev stage)
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  environment:
+    DB_HOST: ${env:DB_HOST}
+    DB_PORT: ${env:DB_PORT, '5432'}
+    DB_USERNAME: ${env:DB_USERNAME}
+    DB_PASSWORD: ${env:DB_PASSWORD}
+    DB_NAME: ${env:DB_NAME}
+    JWT_SECRET: ${env:JWT_SECRET}
+    JWT_EXPIRES_IN: ${env:JWT_EXPIRES_IN, '7d'}
+    NODE_ENV: production
+    # DB_SYNC=true lets TypeORM auto-create tables.
+    # After first successful deploy, change to 'false' in .env.prod
+    DB_SYNC: ${env:DB_SYNC, 'true'}
+    FRONTEND_URL: ${env:FRONTEND_URL, '*'}
+
+functions:
+  api:
+    handler: dist/lambda.lambdaHandler
+    events:
+      - httpApi:
+          path: /api/{proxy+}
+          method: ANY
+      - httpApi:
+          path: /api
+          method: ANY
+    timeout: 29
+    memorySize: 512
+
+plugins:
+  - serverless-offline
+
+package:
+  individually: false
+  patterns:
+    - '!src/**'
+    - '!test/**'
+    - '!**/*.ts'
+    - '!.env*'
+    - '!README.md'
+    - '!DEPLOYMENT.md'
+    - '!node_modules/.cache/**'
+    - 'dist/**'
+    - 'node_modules/**'
