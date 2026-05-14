@@ -3,9 +3,18 @@ import { AppModule } from "./app.module";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  app.enableCors();
+
+  // Explicitly allow all origins so both localhost and Vercel deployments work
+  app.enableCors({
+    origin: '*',
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type,Authorization',
+    credentials: false,
+  });
+
   app.setGlobalPrefix("api");
-  await app.listen(3000);
-  console.log("Application is running on: http://localhost:3000/api");
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+  console.log(`Application is running on port ${port}`);
 }
 bootstrap();
