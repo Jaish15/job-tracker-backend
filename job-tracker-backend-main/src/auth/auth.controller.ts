@@ -10,6 +10,14 @@ export class AuthController {
     return this.authService.resetPassword(email);
   }
 
+  @Post("confirm-reset")
+  async confirmReset(
+    @Body("token") token: string,
+    @Body("newPassword") newPassword: string
+  ) {
+    return this.authService.confirmReset(token, newPassword);
+  }
+
   @Post("login")
   async login(@Body() body: any) {
     return this.authService.login(body);

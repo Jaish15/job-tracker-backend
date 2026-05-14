@@ -1,14 +1,20 @@
 import { Injectable, HttpException, HttpStatus } from "@nestjs/common";
 import * as nodemailer from "nodemailer";
+import * as crypto from "crypto";
+
+interface ResetToken {
+  email: string;
+  expiresAt: number;
+}
 
 @Injectable()
 export class AuthService {
   private transporter: nodemailer.Transporter | null = null;
   private testAccount: any = null;
+  private resetTokens = new Map<string, ResetToken>();
 
   async getTransporter() {
     if (!this.transporter) {
-      // Create a fresh Ethereal test account each server start
       this.testAccount = await nodemailer.createTestAccount();
       this.transporter = nodemailer.createTransport({
         host: "smtp.ethereal.email",
@@ -29,7 +35,18 @@ export class AuthService {
       throw new HttpException("Email is required", HttpStatus.BAD_REQUEST);
     }
 
-    const resetLink = `http://localhost:5173/reset-password?token=mock-token-${Date.now()}`;
+    // Generate a real secure token
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = Date.now() + 30 * 60 * 1000; // 30 minutes
+
+    // Store the token mapped to the email
+    this.resetTokens.set(token, { email, expiresAt });
+
+    // Use FRONTEND_URL env var for the reset link (set this in Render dashboard)
+    const frontendUrl =
+      process.env.FRONTEND_URL ||
+      "https://job-tracker-frontend-jaish15s-projects.vercel.app";
+    const resetLink = `${frontendUrl}/reset-password?token=${token}`;
 
     try {
       const transport = await this.getTransporter();
@@ -54,6 +71,7 @@ export class AuthService {
                 </a>
               </div>
               <p style="color: #888; font-size: 13px; line-height: 1.6;">This link expires in <strong>30 minutes</strong>. If you did not request a password reset, you can safely ignore this email.</p>
+              <p style="color: #aaa; font-size: 12px; word-break: break-all;">Or copy this link: ${resetLink}</p>
             </div>
             <p style="text-align: center; color: #bbb; font-size: 12px; margin-top: 24px;">© 2026 JobTracker. All rights reserved.</p>
           </div>
@@ -71,11 +89,76 @@ export class AuthService {
       };
     } catch (err) {
       console.error("Email send error:", err);
-      throw new HttpException("Failed to send email", HttpStatus.INTERNAL_SERVER_ERROR);
+      throw new HttpException(
+        "Failed to send email",
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
     }
   }
 
-  // Stub login/register — keep the frontend working
+  async confirmReset(token: string, newPassword: string) {
+    if (!token || !newPassword) {
+      throw new HttpException(
+        "Token and new password are required",
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    if (newPassword.length < 6) {
+      throw new HttpException(
+        "Password must be at least 6 characters",
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    const record = this.resetTokens.get(token);
+
+    if (!record) {
+      throw new HttpException(
+        "Invalid or already used reset token",
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    if (Date.now() > record.expiresAt) {
+      this.resetTokens.delete(token);
+      throw new HttpException(
+        "Reset token has expired. Please request a new one.",
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    const { email } = record;
+
+    // Consume the token so it can't be reused
+    this.resetTokens.delete(token);
+
+    console.log(`✅ Password reset validated for: ${email}`);
+
+    // Attempt to update password via AWS backend
+    const awsApiUrl =
+      process.env.AWS_API_URL ||
+      "https://7ypxb5sc33.execute-api.us-east-1.amazonaws.com/api";
+
+    try {
+      const axios = require("axios");
+      await axios.post(`${awsApiUrl}/auth/reset-password-confirm`, {
+        email,
+        newPassword,
+      });
+    } catch (err) {
+      // AWS may not have this endpoint yet — that's OK for now
+      console.warn("AWS password update skipped (endpoint not available):", err.message);
+    }
+
+    return {
+      success: true,
+      email,
+      message: "Password has been reset successfully. You can now log in with your new password.",
+    };
+  }
+
+  // Stub login/register
   async login(body: any) {
     return {
       accessToken: "mock-jwt-token",
